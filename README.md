@@ -12,6 +12,18 @@ A web application to view and play dashcam videos stored in Google Drive.
 
 ## Quick Start
 
+### Option 1: Deploy to Cloud (Recommended)
+
+Deploy to Google Cloud Run for **FREE** and access from anywhere:
+
+```bash
+gcloud run deploy dashcam-viewer --source . --region us-central1
+```
+
+See [DEPLOY.md](DEPLOY.md) for complete deployment instructions.
+
+### Option 2: Run Locally
+
 1. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
@@ -38,7 +50,8 @@ A web application to view and play dashcam videos stored in Google Drive.
 
 ## Documentation
 
-- [Setup Instructions](SETUP.md) - Detailed guide for setting up Google Drive API credentials
+- [Deployment Guide](DEPLOY.md) - Deploy to Google Cloud Run (FREE hosting)
+- [Setup Instructions](SETUP.md) - Local development setup with Google Drive API
 
 ## Requirements
 

@@ -1,5 +1,6 @@
 import os
 import io
+import json
 from flask import Flask, render_template, redirect, url_for, session, request, send_file
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -7,12 +8,17 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+
+# Use environment variable for secret key in production, random for local dev
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 
 # Google Drive API scopes
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 # OAuth 2.0 configuration
+# In production (Cloud Run), credentials come from environment variable
+# In local dev, use credentials.json file
+GOOGLE_CREDENTIALS = os.environ.get('GOOGLE_CREDENTIALS')
 CLIENT_SECRETS_FILE = "credentials.json"
 
 def get_drive_service():
@@ -54,11 +60,21 @@ def index():
 @app.route('/authorize')
 def authorize():
     """Start OAuth 2.0 authorization flow."""
-    flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
-        scopes=SCOPES,
-        redirect_uri=url_for('oauth2callback', _external=True)
-    )
+    # Use credentials from environment variable if available (production)
+    # Otherwise use credentials.json file (local development)
+    if GOOGLE_CREDENTIALS:
+        client_config = json.loads(GOOGLE_CREDENTIALS)
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri=url_for('oauth2callback', _external=True)
+        )
+    else:
+        flow = Flow.from_client_secrets_file(
+            CLIENT_SECRETS_FILE,
+            scopes=SCOPES,
+            redirect_uri=url_for('oauth2callback', _external=True)
+        )
 
     authorization_url, state = flow.authorization_url(
         access_type='offline',
@@ -73,12 +89,23 @@ def oauth2callback():
     """Handle OAuth 2.0 callback."""
     state = session['state']
 
-    flow = Flow.from_client_secrets_file(
-        CLIENT_SECRETS_FILE,
-        scopes=SCOPES,
-        state=state,
-        redirect_uri=url_for('oauth2callback', _external=True)
-    )
+    # Use credentials from environment variable if available (production)
+    # Otherwise use credentials.json file (local development)
+    if GOOGLE_CREDENTIALS:
+        client_config = json.loads(GOOGLE_CREDENTIALS)
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            state=state,
+            redirect_uri=url_for('oauth2callback', _external=True)
+        )
+    else:
+        flow = Flow.from_client_secrets_file(
+            CLIENT_SECRETS_FILE,
+            scopes=SCOPES,
+            state=state,
+            redirect_uri=url_for('oauth2callback', _external=True)
+        )
 
     flow.fetch_token(authorization_response=request.url)
 
@@ -126,6 +153,10 @@ def logout():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    # Disable HTTPS requirement for local development
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-    app.run(debug=True, port=5000)
+    # Disable HTTPS requirement for local development only
+    if not GOOGLE_CREDENTIALS:
+        os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+    # Use PORT environment variable for Cloud Run, default to 5000 for local
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=not GOOGLE_CREDENTIALS)
