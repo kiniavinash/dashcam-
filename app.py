@@ -1,7 +1,8 @@
 import os
 import io
 import json
-from flask import Flask, render_template, redirect, url_for, session, request, send_file
+import threading
+from flask import Flask, render_template, redirect, url_for, session, request, send_file, jsonify
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -11,6 +12,9 @@ app = Flask(__name__)
 
 # Use environment variable for secret key in production, random for local dev
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+
+# In-memory download job tracker: file_id -> {status, filename, error}
+download_jobs = {}
 
 # Google Drive API scopes
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -145,6 +149,56 @@ def stream_video(file_id):
 
     except Exception as e:
         return f"Error streaming video: {str(e)}", 500
+
+def _download_to_disk(credentials_dict, file_id, filename):
+    """Background thread: download a Drive file to /data/<filename>."""
+    try:
+        credentials = Credentials(**credentials_dict)
+        service = build('drive', 'v3', credentials=credentials)
+        request_file = service.files().get_media(fileId=file_id)
+        os.makedirs('/data', exist_ok=True)
+        dest = os.path.join('/data', filename)
+        with open(dest, 'wb') as f:
+            downloader = MediaIoBaseDownload(f, request_file)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+        download_jobs[file_id] = {'status': 'done', 'filename': filename}
+    except Exception as e:
+        download_jobs[file_id] = {'status': 'error', 'filename': filename, 'error': str(e)}
+
+
+@app.route('/download/<file_id>', methods=['POST'])
+def download_to_server(file_id):
+    """Trigger a server-side download of a Drive file to /data/."""
+    if file_id in download_jobs and download_jobs[file_id]['status'] == 'downloading':
+        return jsonify(download_jobs[file_id])
+
+    service = get_drive_service()
+    if not service:
+        return jsonify({'status': 'error', 'error': 'Not authenticated'}), 401
+
+    try:
+        meta = service.files().get(fileId=file_id, fields='name').execute()
+        filename = meta['name']
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+    credentials_dict = dict(session['credentials'])
+    download_jobs[file_id] = {'status': 'downloading', 'filename': filename}
+    threading.Thread(
+        target=_download_to_disk,
+        args=(credentials_dict, file_id, filename),
+        daemon=True
+    ).start()
+    return jsonify({'status': 'downloading', 'filename': filename})
+
+
+@app.route('/download_status/<file_id>')
+def download_status(file_id):
+    """Return current download status for a file."""
+    return jsonify(download_jobs.get(file_id, {'status': 'idle'}))
+
 
 @app.route('/logout')
 def logout():

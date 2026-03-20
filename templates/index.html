@@ -170,6 +170,43 @@
             font-size: 20px;
             text-align: center;
         }
+
+        .download-section {
+            padding: 0 20px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .download-btn {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+            padding: 7px 14px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .download-btn:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+        }
+
+        .download-btn:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        .dl-status {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .dl-status.done { color: #22863a; font-weight: 600; }
+        .dl-status.error { color: #cb2431; }
     </style>
 </head>
 <body>
@@ -198,6 +235,13 @@
                                 {{ video.createdTime[:10] }}
                             {% endif %}
                         </div>
+                    </div>
+                    <div class="download-section" onclick="event.stopPropagation()">
+                        <button class="download-btn" id="dl-btn-{{ video.id }}"
+                                onclick="downloadForInference('{{ video.id }}')">
+                            ⬇ Download for Inference
+                        </button>
+                        <span class="dl-status" id="dl-status-{{ video.id }}"></span>
                     </div>
                 </div>
                 {% endfor %}
@@ -254,6 +298,60 @@
                 closeVideo();
             }
         });
+
+        const pollIntervals = {};
+
+        function downloadForInference(fileId) {
+            const btn = document.getElementById('dl-btn-' + fileId);
+            const statusEl = document.getElementById('dl-status-' + fileId);
+
+            btn.disabled = true;
+            btn.textContent = 'Downloading...';
+            statusEl.textContent = '';
+            statusEl.className = 'dl-status';
+
+            fetch('/download/' + fileId, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'error') {
+                        btn.textContent = '⬇ Download for Inference';
+                        btn.disabled = false;
+                        statusEl.textContent = 'Error: ' + data.error;
+                        statusEl.className = 'dl-status error';
+                        return;
+                    }
+                    pollIntervals[fileId] = setInterval(() => pollStatus(fileId), 2000);
+                })
+                .catch(() => {
+                    btn.textContent = '⬇ Download for Inference';
+                    btn.disabled = false;
+                    statusEl.textContent = 'Request failed';
+                    statusEl.className = 'dl-status error';
+                });
+        }
+
+        function pollStatus(fileId) {
+            fetch('/download_status/' + fileId)
+                .then(r => r.json())
+                .then(data => {
+                    const btn = document.getElementById('dl-btn-' + fileId);
+                    const statusEl = document.getElementById('dl-status-' + fileId);
+
+                    if (data.status === 'done') {
+                        clearInterval(pollIntervals[fileId]);
+                        btn.textContent = 'Downloaded ✓';
+                        btn.disabled = false;
+                        statusEl.textContent = data.filename;
+                        statusEl.className = 'dl-status done';
+                    } else if (data.status === 'error') {
+                        clearInterval(pollIntervals[fileId]);
+                        btn.textContent = '⬇ Download for Inference';
+                        btn.disabled = false;
+                        statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+                        statusEl.className = 'dl-status error';
+                    }
+                });
+        }
     </script>
 </body>
 </html>
