@@ -53,6 +53,16 @@ See [DEPLOY.md](DEPLOY.md) for complete deployment instructions.
 - [Deployment Guide](DEPLOY.md) - Deploy to Google Cloud Run (FREE hosting)
 - [Setup Instructions](SETUP.md) - Local development setup with Google Drive API
 
+## VLM Inference (Alpamayo-R1)
+
+See [`scripts/`](scripts/) and [`Dockerfile.inference`](Dockerfile.inference) for the inference pipeline.
+
+> **Known limitation — no egomotion data**
+>
+> [Alpamayo-R1](https://github.com/NVlabs/alpamayo) was trained on multi-camera video **with** egomotion (position + orientation at 10 Hz from GPS/IMU). The current dashcam does **not** record GPS or IMU data, so inference runs with zero motion assumed. The model will still produce reasoning traces, but trajectory predictions will be less accurate.
+>
+> When a dashcam with GPS/IMU is available, pass `--egomotion gps.csv` to `scripts/run_inference.py` (format: `timestamp_us, x, y, z, qw, qx, qy, qz`).
+
 ## Requirements
 
 - Python 3.8+
