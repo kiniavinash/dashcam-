@@ -1,0 +1,44 @@
+# Inference container for Alpamayo-R1 VLM
+# Requires: NVIDIA GPU with >=24GB VRAM (A100 80GB recommended for the 10B model)
+# Build: docker compose -f docker-compose.inference.yml build
+# Run:   docker compose -f docker-compose.inference.yml run --rm inference
+
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    git curl build-essential cmake ninja-build \
+    python3.12 python3.12-dev python3.12-venv \
+    libgl1-mesa-glx libglib2.0-0 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Pin alpamayo at a known-good commit for reproducibility
+# To update: change this SHA and rebuild the image
+ARG ALPAMAYO_COMMIT=7333f71060c5f4f2adc25542260d6be3d41ab2d3
+RUN git clone https://github.com/NVlabs/alpamayo /alpamayo && \
+    cd /alpamayo && git checkout ${ALPAMAYO_COMMIT}
+
+WORKDIR /alpamayo
+
+# Install all alpamayo deps (torch, flash-attn, transformers, etc.)
+# flash-attn compiles from source — this step takes ~20-30 min on first build
+# Subsequent builds use the Docker layer cache
+RUN uv sync --python 3.12
+
+# Install extra deps our scripts need (gdown for Google Drive)
+RUN uv pip install gdown
+
+# Copy inference scripts into the alpamayo working dir so `uv run` picks them up
+COPY scripts/ /alpamayo/scripts/
+
+# Default entrypoint: uv run ensures the alpamayo venv is active
+ENTRYPOINT ["uv", "run", "python"]
+CMD ["scripts/run_inference.py", "--help"]

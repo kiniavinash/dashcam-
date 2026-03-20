@@ -2,6 +2,16 @@
 credentials.json
 token.json
 
+# Inference data and results (can be large)
+data/
+results/
+
+# HuggingFace model cache
+.cache/
+
+# Docker build artifacts
+*.tar
+
 # Python
 __pycache__/
 *.py[cod]

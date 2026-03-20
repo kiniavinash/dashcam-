@@ -1,0 +1,33 @@
+services:
+  inference:
+    build:
+      context: .
+      dockerfile: Dockerfile.inference
+      args:
+        # Pin to a specific alpamayo commit — change to update
+        ALPAMAYO_COMMIT: "7333f71060c5f4f2adc25542260d6be3d41ab2d3"
+    image: dashcam-inference:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # HuggingFace token — required for nvidia/Alpamayo-R1-10B (gated model)
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      # Model weights cache — mounted as a volume so they survive container restarts
+      - HF_HOME=/cache/huggingface
+    volumes:
+      # Input videos go here (mount your data directory)
+      - ./data:/data
+      # Inference results are written here
+      - ./results:/results
+      # Persistent HuggingFace model cache — avoids re-downloading 10B weights
+      - hf_cache:/cache/huggingface
+    # Override CMD at runtime:
+    #   docker compose -f docker-compose.inference.yml run --rm inference \
+    #     scripts/run_inference.py --mode video --input /data/my_clip.mp4
+    ipc: host  # needed for shared memory with large tensor ops
+
+volumes:
+  hf_cache:
+    # Named volume — survives `docker compose down`, deleted by `docker compose down -v`
